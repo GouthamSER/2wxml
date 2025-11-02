@@ -7,6 +7,12 @@ from uuid import uuid4
 from base64 import b64decode
 from importlib import import_module, reload
 
+from aiohttp import web as webserver
+from bot.webcode import bot_run
+from os import environ
+
+PORT_CODE = environ.get("PORT", "8080")
+
 from requests import get as rget
 from pytz import timezone
 from bs4 import BeautifulSoup
@@ -242,28 +248,35 @@ async def log_check():
     
 
 async def main():
-    await gather(start_cleanup(), torrent_search.initiate_search_tools(), restart_notification(), search_images(), set_commands(bot), log_check())
+    await gather(
+        start_cleanup(),
+        torrent_search.initiate_search_tools(),
+        restart_notification(),
+        search_images(),
+        set_commands(bot),
+        log_check()
+    )
     await sync_to_async(start_aria2_listener, wait=False)
-    
-    bot.add_handler(MessageHandler(
-        start, filters=command(BotCommands.StartCommand) & private))
-    bot.add_handler(CallbackQueryHandler(
-        token_callback, filters=regex(r'^pass')))
-    bot.add_handler(MessageHandler(
-        login, filters=command(BotCommands.LoginCommand) & private))
-    bot.add_handler(MessageHandler(log, filters=command(
-        BotCommands.LogCommand) & CustomFilters.sudo))
-    bot.add_handler(MessageHandler(restart, filters=command(
-        BotCommands.RestartCommand) & CustomFilters.sudo))
-    bot.add_handler(MessageHandler(ping, filters=command(
-        BotCommands.PingCommand) & CustomFilters.authorized & ~CustomFilters.blacklisted))
-    bot.add_handler(MessageHandler(bot_help, filters=command(
-        BotCommands.HelpCommand) & CustomFilters.authorized & ~CustomFilters.blacklisted))
-    bot.add_handler(MessageHandler(stats, filters=command(
-        BotCommands.StatsCommand) & CustomFilters.authorized & ~CustomFilters.blacklisted))
+
+    # Run web server
+    client = webserver.AppRunner(await bot_run())
+    await client.setup()
+    bind_address = "0.0.0.0"
+    await webserver.TCPSite(client, bind_address, PORT_CODE).start()
+
+    bot.add_handler(MessageHandler(start, filters=command(BotCommands.StartCommand) & private))
+    bot.add_handler(CallbackQueryHandler(token_callback, filters=regex(r'^pass')))
+    bot.add_handler(MessageHandler(login, filters=command(BotCommands.LoginCommand) & private))
+    bot.add_handler(MessageHandler(log, filters=command(BotCommands.LogCommand) & CustomFilters.sudo))
+    bot.add_handler(MessageHandler(restart, filters=command(BotCommands.RestartCommand) & CustomFilters.sudo))
+    bot.add_handler(MessageHandler(ping, filters=command(BotCommands.PingCommand) & CustomFilters.authorized & ~CustomFilters.blacklisted))
+    bot.add_handler(MessageHandler(bot_help, filters=command(BotCommands.HelpCommand) & CustomFilters.authorized & ~CustomFilters.blacklisted))
+    bot.add_handler(MessageHandler(stats, filters=command(BotCommands.StatsCommand) & CustomFilters.authorized & ~CustomFilters.blacklisted))
+
     LOGGER.info(f"WZML-X Bot [@{bot_name}] Started!")
     if user:
         LOGGER.info(f"WZ's User [@{user.me.username}] Ready!")
+
     signal(SIGINT, exit_clean_up)
 
 async def stop_signals():
